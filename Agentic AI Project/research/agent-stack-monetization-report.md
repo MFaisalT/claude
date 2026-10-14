@@ -1,356 +1,352 @@
 # Monetizing the Paperclip × OpenClaw × Hermes Agent Stack
 
-**A practical research report for solo founders and small teams, October 2026**
+**A practical research report for solo founders and small teams, October 2026, second research pass**
 
 > Produced by applying the saved instructions in [`../prompts/agent-stack-monetization.md`](../prompts/agent-stack-monetization.md).
-> **Evidence labels:** `[Verified]` means confirmed in the project's primary README or docs. `[Reported]` means from secondary sources; check before relying on it. `[Assumption]` means a modelling input I chose and explain.
-> Model prices are Anthropic first-party API list prices as of 2026-10-06. Re-check before you quote clients.
+>
+> **Method.** Pass 1 used the project READMEs and web sources. Pass 2, this version, reads the **source code and in-repo docs** of all three projects, shallow-cloned on 2026-10-14:
+>
+> | Project | Snapshot used |
+> |---|---|
+> | `paperclipai/paperclip` | `7df55f3`, committed 2026-10-14 |
+> | `NousResearch/hermes-agent` | HEAD, committed 2026-10-13 |
+> | `openclaw/openclaw` | HEAD, committed 2026-10-14 |
+>
+> Market, policy, and legal claims come from web sources, listed in §6. Appendix A lists what changed from pass 1 and why.
+>
+> **Evidence labels:** `[Verified]` means confirmed in the project's source code or in-repo docs at the snapshot above. `[Reported]` means from secondary sources; check before relying on it. `[Assumption]` means a modelling input I chose and explain.
+> Model prices are Anthropic first-party API list prices as of 2026-10-06.
 
 ---
 
 ## 0. Executive summary
 
-**Thesis.** These three projects fit together cleanly as **governance (Paperclip) → channels (OpenClaw) → cognition (Hermes)**. The money does not come from the agents. It comes from picking a **narrow vertical in which an agent finishes a unit of work you can bill for**, such as a resolved ticket, a booked appointment, a published article, or a delivered brief, at a **gross margin above 80%**. The stack's real edge is control: Paperclip's budgets, approvals, and per-company isolation let one operator run many client "companies" without margins or risk getting out of hand.
+**Thesis.** The three projects do fit together as **governance (Paperclip) → channels (OpenClaw *and* Hermes) → cognition (Hermes)**. The code changes three important parts of the original plan:
 
-**Ranked business models for a solo founder:**
+1. **Hermes, not OpenClaw, should own commercial WhatsApp.** OpenClaw's WhatsApp channel runs only over WhatsApp Web through Baileys. Its own docs say "there is no separate Twilio WhatsApp channel". Hermes ships an official **WhatsApp Business Cloud API** adapter, which its docs describe as the production path with "no account-ban risk" `[Verified]`.
+2. **The cheap model must not hold the tools.** OpenClaw's security docs warn against running small or cheap models on tool-enabled agents that read untrusted input, such as public customer chats `[Verified]`. The profitable pattern is: a small model classifies and drafts, deterministic code performs the action, and a stronger model handles escalations (§3.3).
+3. **OpenClaw is not a multi-tenant boundary.** Its docs say: "One trust boundary per gateway … not a hostile multi-tenant security boundary" `[Verified]`. Each client needs its own gateway, credentials, and ideally its own OS user or host.
+
+The money still comes from a **narrow vertical where an agent finishes a unit of work you can bill for**. The stack's edge is control: Paperclip's budgets reserve spend before a run starts and fail closed, it has approval gates, and it isolates each company's data.
+
+**No independently verified revenue case study** of Paperclip-run "zero-human companies" exists yet. Coverage is mostly promotional, and one secondhand report says Paperclip's creator acknowledged the project had not yet generated revenue `[Reported]`. Treat every number below as a model to test, not a benchmark.
+
+**Ranked business models for a solo founder (unchanged from pass 1):**
 
 | Rank | Model | Why |
 |---|---|---|
-| 1 | **Vertical support and booking network** (WhatsApp/Telegram for clinics, salons, trades, real estate) | Fastest to first revenue, billable per resolution or booking, low capital at risk, model cost per conversation measured in cents |
-| 2 | **Niche intelligence briefs** (one vertical, paid daily or weekly) | Token cost is fixed per brief, not per subscriber, so margins grow with the list. The moat is data access, not prompts |
-| 3 | **Content studio**, sold as an add-on to #1 or #2 | Cheap to produce, but output is commoditized and search engines penalize scaled low-value content |
-| 4 | **"Zero-human" ads agency** | Highest revenue per client, but you are spending other people's money through APIs with gated access. Start with humans approving every change |
+| 1 | **Vertical support and booking network** (WhatsApp Cloud API + Telegram for clinics, salons, trades, real estate) | Fastest to first revenue. Buyers already understand per-resolution pricing (Intercom Fin: about $0.99 per resolution `[Reported]`). Modelled contribution of 55–67% per client (§2.1) |
+| 2 | **Niche intelligence briefs** | Model cost is about $0.42–$0.49 per brief *per product*, not per subscriber. The moat is data access |
+| 3 | **Content studio** (add-on) | Model cost is negligible, but Google's spam updates (June and August 2026) keep targeting scaled, low-value content `[Reported]` |
+| 4 | **"Zero-human" ads agency** | Spends client money. Google Ads API production access starts at 2,880 operations a day (Explorer tier) `[Reported: Google developer docs]` |
 
-**Recommended first business:** #1, aimed at a single vertical. It has the clearest ROI story ("we answered 1,140 messages and booked 86 appointments this month"), a pricing anchor buyers already understand (per-resolution AI support), and it is the cleanest test of all three layers working together.
+**Recommended first build:** **Paperclip + Hermes** (one Hermes *profile* per client, with the official WhatsApp Cloud API and Telegram). Add **OpenClaw** only for channels Hermes doesn't serve well for a given client, such as iMessage through `imsg` on a Mac, or Teams. Keep it to one gateway per client.
 
-### Reality check: where the original brief needs correcting
+### Reality check: the brief versus the code
 
-1. **Budget thresholds are configurable, not a fixed 80%/100%.** Paperclip describes "scoped budget policies with warning thresholds and hard stops". It also warns that enforcement "uses recorded spend", so usage reporting and work already in flight can delay a stop `[Verified]`. Treat Paperclip as the *first* line of defense and set provider-side caps as the second (§3.1).
-2. **Hermes `MEMORY.md` cannot grow without limit.** It is capped at **2,200 characters** (about 800 tokens), and `USER.md` at **1,375 characters**. A write that would exceed the cap returns an error, and the agent has to consolidate. Both files are loaded as a frozen snapshot at session start `[Reported, from mirrors of the official docs]`. The things that *do* grow are the session-search database, the skill library, OpenClaw workspace memory files, and Paperclip task threads (§4.3).
-3. **`SOUL.md` and `MEMORY.md` are not unique to Hermes.** OpenClaw also uses workspace persona and memory files, and Hermes's `hermes claw migrate` imports OpenClaw's `SOUL.md`, memories, and skills `[Verified]`. The "brain" role belongs to Hermes because of its **learning loop** (it writes and refines skills after complex tasks) and its **sandboxed execution backends**, not because of the file names.
-4. **OpenClaw and Hermes overlap heavily.** Both ship multi-channel gateways, cron, and skills `[Verified]`. If you don't give each capability a single owner, you get two bots answering the same customer. §1.3 assigns ownership.
-5. **"Zero-human" is a sales line, not an operating model.** Each business below names its required human touchpoints. For anything that spends money, publishes publicly, or messages customers in bulk, the human is the **Paperclip board**.
-6. **Platform policy limits these businesses as much as the technology does.** Since 15 January 2026, Meta's WhatsApp Business terms ban *general-purpose* AI assistants. Business-specific bots for support, booking, and sales are still allowed `[Reported]`. Similar constraints apply to ads APIs, search spam policies, and financial publishing (§2).
+| # | Claim in the brief | What the code and docs say |
+|---|---|---|
+| 1 | "80% alerts, 100% auto-pause" | **Correct as defaults.** Policies default to `warnPercent: 80` (configurable from 1 to 99) and `hardStopEnabled: true`, which pauses at 100% of `amount`. Scopes are `company`, `agent`, or `project`. Windows are `calendar_month_utc` or `lifetime` `[Verified: packages/db/src/schema/budget_policies.ts, packages/shared/src/constants.ts]`. Spend is **reserved before dispatch**, but the code comment warns: *"Estimates constrain admission; they cannot cap a provider's bill"* `[Verified: server/src/services/budget-reservations.ts]`. Pass 1 wrongly said the thresholds were not fixed at 80/100. |
+| 2 | "Ever-expanding MEMORY.md" | **Wrong.** `MEMORY.md` is capped at 2,200 characters and `USER.md` at 1,375. A write that would exceed the cap returns an error and does not auto-compact. Both are loaded as a frozen snapshot per session `[Verified: website/docs/user-guide/features/memory.md]`. What *does* grow is **gateway session history**: "Gateway conversations do not reset after inactivity or at a daily boundary" `[Verified: sessions.md]` (§4.3). |
+| 3 | "OpenClaw = the WhatsApp arm" | **Risky for commercial use.** OpenClaw's WhatsApp channel uses Baileys (WhatsApp Web) only. Hermes has `whatsapp-cloud` (official API) `[Verified]`. |
+| 4 | "Paperclip delegates down to OpenClaw" | **Yes, as an employee.** OpenClaw joins a company through an invite prompt, then board approval, then a one-time API key claim. It connects over the gateway WebSocket (`openclaw_gateway`, default `ws://127.0.0.1:18789`) and installs a Paperclip skill, which lets it **create Paperclip tasks itself** `[Verified: packages/adapters/openclaw-gateway/doc/ONBOARDING_AND_TEST_PLAN.md]`. The legacy webhook adapter was removed. |
+| 5 | "OpenClaw uses Hermes for heavy cognition" | **Not directly.** There is no OpenClaw→Hermes adapter. The connection runs **through Paperclip issues**. Hermes is invoked by Paperclip's built-in `hermes_local` (a CLI child process) or `hermes_gateway` (HTTP/SSE to a Hermes API server) adapters `[Verified: packages/adapters/hermes/README.md]`. |
+| 6 | "Hermes = SOUL.md / MEMORY.md brain" | Both projects use persona and memory files. Hermes's real differentiators are its **skill learning loop** with a **curator** that marks unused skills stale after 14 days and archives them after 30, **profiles** (isolated homes), and **hardened Docker sandboxes** `[Verified]`. |
+| 7 | "Zero-human" | Everything that spends money, publishes, or messages in bulk should pass a Paperclip approval or an "Ask first" gate. Under EU AI Act Art. 50, chatbots must disclose that they are AI from **2 August 2026** `[Reported]`. |
 
 ---
 
 ## 1. Architectural synergy and integration matrix
 
-### 1.1 Role matrix
+### 1.1 Role matrix (verified against code)
 
-| Concern | **Paperclip**: the company | **OpenClaw**: the front desk | **Hermes Agent**: the back office |
+| Concern | **Paperclip**: the company | **Hermes Agent**: back office + official channels | **OpenClaw**: extra channels + device reach |
 |---|---|---|---|
-| Core job | Goals, org chart, issues/tickets, scheduling, budgets, approvals, audit | Customer conversations across channels in real time; light tools; browser actions | Heavy multi-step work, research, code and data jobs, learning new skills |
-| Key primitives `[Verified]` | Companies → goals → projects → issues (atomic checkout, execution locks, blockers); **routines** triggered by cron, webhook, or API; heartbeats through a DB-backed wakeup queue; Skill Studio with versioning and rollback; connection actions set to *Allowed / Ask first / Off*; board approvals; revisioned config | Gateway control plane; 20+ channels (WhatsApp, Telegram, Slack, Discord, iMessage, Teams, Signal, Google Chat, …); DM pairing by default; optional Docker sandbox (`off` / `non-main` / `all`); plugins and skills via ClawHub | Bounded curated memory (`MEMORY.md`, `USER.md`), `SOUL.md` persona, full-text session search; autonomous skill creation and patching (agentskills.io-compatible); isolated parallel subagents; 7 terminal backends (local, Docker, SSH, Singularity, Modal, Daytona, Vercel Sandbox); built-in cron; MCP; providers including Nous Portal, OpenRouter, OpenAI, and custom endpoints |
-| How it's invoked | Human board through the React UI; webhooks or API into routines | Inbound channel message; Paperclip HTTP/webhook adapter `[Verified: OpenClaw listed as a Paperclip adapter]` | Paperclip's **Hermes adapter** (Hermes and Hermes Gateway are listed adapters) `[Verified]`; cron |
-| Must **not** do | Talk to end customers directly | Run long or expensive jobs; hold host shell privileges; install unreviewed skills | Own a public-facing channel in the three-layer setup; spend money without a Paperclip approval |
-| State it owns | Ledger of work, spend, approvals, and artifacts (PostgreSQL) | Per-customer conversation sessions and short-term context | Long-term operating knowledge (skills) and a compact client and user profile |
+| Core job | Goals, issues, routines, budgets, approvals, audit, multi-company | Heavy multi-step work; skill learning; **WhatsApp Cloud API**, Telegram, Slack, Email and more through its gateway | Channels Hermes lacks or does worse at (iMessage via `imsg` on macOS, Teams, Google Chat, 20+ others); browser and device nodes |
+| Integration with Paperclip | — | `hermes_local` or `hermes_gateway` adapter. The gateway adapter blocks non-loopback plain HTTP unless you set a "dangerous" override `[Verified]` | `openclaw_gateway` over WebSocket with a device key and token header; joins through board approval `[Verified]` |
+| Wakes on | — | Assignment, issue comments ("comment-driven wakes"), routines `[Verified]` | Assignment, routines |
+| Key safety features | Budget reservations, fail-closed hard stop, `hire_agent` / `budget_override_required` / `request_board_approval` approvals, tool connections set to `allowed` / `ask_first` / `off`, revisioned routines `[Verified]` | `approvals.mode: smart` (default) or `manual`; `unattended_mode: deny`; Docker backend with `--cap-drop ALL`, `no-new-privileges`, and a PID limit; `docker_forward_env: []`; egress-isolation guide `[Verified]` | `sandbox.mode` (`off` / `non-main` / `all`); DM pairing by default; `openclaw security audit --deep --fix` `[Verified]` |
+| Must **not** do | Talk to end customers | Share a profile between two agent processes ("Never point two agent processes at the same profile") `[Verified]` | Serve several mutually untrusting clients from one gateway `[Verified]` |
 
-### 1.2 End-to-end request flow (support and booking example)
+### 1.2 End-to-end request flow (support and booking, recommended v1)
 
 ```
- End user (WhatsApp / Telegram)
-        │ 1. message
-        ▼
- ┌──────────────────────────┐   fast path (≈90% of traffic)
- │ OpenClaw gateway         │── 2. answer FAQ / check slots / take booking ──► reply in < 5 s
- │ (per-client container,   │
- │  sandbox mode "all")     │── 3. needs heavy work or policy decision
- └──────────┬───────────────┘        │ POST signed webhook → Paperclip routine
-            │                        ▼
-            │            ┌──────────────────────────────┐
-            │            │ Paperclip (company = client) │ 4. routine creates issue,
-            │            │  goal link · budget check    │    links goal, checks budget
-            │            └──────────┬───────────────────┘
-            │                       │ 5. heartbeat wakes assignee (Hermes adapter)
-            │                       ▼
-            │            ┌──────────────────────────────┐
-            │            │ Hermes worker (Docker/Modal) │ 6. subagents research / compute,
-            │            │  skills · memory · MCP       │    write work product, refine skill
-            │            └──────────┬───────────────────┘
-            │                       │ 7. task review / board approval if gated
-            │                       ▼   (refund, discount, bulk message, spend)
-            │            ┌──────────────────────────────┐
-            └────────────│ Paperclip → OpenClaw adapter │ 8. deliver result to customer thread
-                         └──────────────────────────────┘
-                                    │ 9. payment link / booking confirmation / upsell offer
-                                    ▼
-                         Revenue event (Stripe / booking system) → logged against issue
+ Customer ── WhatsApp (Cloud API webhook) ──► Hermes gateway, profile "client-acme"
+                                               │  (front-desk agent: drafts + classifies;
+                                               │   NO shell, NO web, NO arbitrary HTTP)
+             fast path ≈85–95% ◄───────────────┤ 1. intent + slot lookup via deterministic booking service
+                                               │ 2. booking executed by code after customer confirms
+                                               │
+                                               │ 3. escalate: create Paperclip issue
+                                               ▼    (signed routine webhook, hmac_sha256, 300 s replay window)
+                               ┌───────────────────────────────────┐
+                               │ Paperclip: company "Acme Clinic"  │ 4. budget reservation → invocation block check
+                               │ goal · project · issue · approvals│
+                               └──────────────┬────────────────────┘
+                                              │ 5. wake assignee (hermes_local / hermes_gateway)
+                                              ▼
+                               ┌───────────────────────────────────┐
+                               │ Hermes back-office profile        │ 6. Docker backend, subagents, skills;
+                               │ "acme-ops" (separate from front)  │    proposes refund/discount/reply
+                               └──────────────┬────────────────────┘
+                                              │ 7. ask_first / request_board_approval for money-moving actions
+                                              ▼
+                               Owner taps approve (Paperclip UI or operator Telegram)
+                                              │ 8. issue comment → front-desk agent wakes, replies in thread
+                                              ▼
+                               Payment link / booking confirmation → revenue logged on the issue
 ```
 
-**The same flow as steps:**
+**Why two Hermes profiles per client** (front desk and back office): profiles are separate homes with their own memory, skills, `.env`, and gateway state `[Verified]`. The **front-desk** profile reads untrusted customer text, so it gets no dangerous tools. The **back-office** profile has tools but **never reads raw customer text directly**. It works from a Paperclip issue that the front desk wrote. This splits the "lethal trifecta" (private data, untrusted input, and an outbound channel in one agent) across a governed boundary.
 
-1. A customer message arrives at that client's own OpenClaw gateway. Unknown senders go through DM pairing or an allowlist. For a public business line, use an allowlist policy combined with rate limiting.
-2. On the fast path, a small model (§3.3) answers using skills scoped to the client: the FAQ, opening hours, a booking API, and a catalog. Most traffic should end here.
-3. Escalation triggers send the work to Paperclip through a webhook-triggered routine. Each run of a routine creates a tracked task `[Verified]`. Typical triggers are low confidence, a refund or discount request, a complaint, an order above a set value, a multi-step research task, or anything that changes money or data.
-4. Paperclip creates an issue under that client's company, links it to a goal (for example "CSAT ≥ 4.6, response < 1 min"), and runs a **budget check before invocation** `[Verified: wakeup queue → budget checks → workspace resolution → secret injection → skill loading → adapter invocation]`.
-5. The heartbeat wakes the assigned Hermes agent.
-6. Hermes runs in a sandboxed backend, fans out subagents if needed, and writes a work product. If the job was new, it saves or patches a skill so the next one is cheaper.
-7. If the action is gated, Paperclip holds it for **task review or board approval**. Gated actions include refunds, discounts above a threshold, outbound campaigns, ad-spend changes, and publishing.
-8. Paperclip returns the result to OpenClaw, which replies in the original thread.
-9. Revenue is recorded against the issue: a payment link, a booking confirmation, or an accepted upsell. This gives you **revenue per issue**, the input for token ROI in §3.2.
+**Paperclip routine webhook details** `[Verified: docs/api/routines.md]`:
+- Trigger kinds are `schedule` (cron plus timezone), `webhook`, and API.
+- Webhook signing modes are `bearer`, `hmac_sha256`, `github_hmac`, and `none`. The replay window is 30–86,400 seconds (default 300) for HMAC.
+- Concurrency policies are `coalesce_if_active` (default), `skip_if_active`, and `always_enqueue`.
+- The webhook secret is shown **once**.
 
-### 1.3 Resolving the overlap
+### 1.3 Channel and capability ownership
 
-| Capability | Owner | Rationale |
+| Capability | Owner | Why |
 |---|---|---|
-| Customer-facing channels | **OpenClaw** | Widest channel coverage, including iMessage, Teams, and Google Chat. Keep the Hermes gateway disabled for customer channels |
-| Operator alerts (budget warnings, approvals waiting) | **Hermes gateway** *or* Paperclip connectors, sent to *your* private Telegram | Keeps operator traffic separate from customer traffic |
-| Scheduling | **Paperclip routines** | Every run becomes an auditable, budgeted issue. Use Hermes's built-in cron only for maintenance inside a single worker |
-| Skills | Hermes **authors** them; Paperclip Skill Studio **versions, tests, and rolls back** the ones you promote | Self-written skills are untrusted until reviewed. ClawHub skills are not installed in production (§4.1) |
-| Long-term memory | Hermes for each client's operating knowledge; OpenClaw for each customer's conversation context | Each piece of memory has one writer |
+| WhatsApp, commercial | **Hermes `whatsapp-cloud`** | Official Meta Cloud API. Needs a Meta Business account, a public HTTPS webhook, and approved templates outside the 24-hour window `[Verified]` |
+| WhatsApp, personal or demo | Either (Baileys) | "Unofficial and ban-prone" (Hermes docs). Never use for client numbers |
+| Telegram, Slack, Discord, Email, Signal | Hermes (default) or OpenClaw | Pick one per client; never both on the same bot account |
+| iMessage | **OpenClaw** | `imsg` on a signed-in macOS host. BlueBubbles support was removed `[Verified]` |
+| SMS | Either. OpenClaw's Twilio plugin validates Twilio signatures by default `[Verified]` | |
+| Scheduling | **Paperclip routines** | Each run is an auditable, budgeted issue. Hermes cron is only for in-profile maintenance |
+| Task board | **Paperclip** | Hermes also ships a Kanban board (`~/.hermes/kanban.db`). Don't run two boards of record |
+| Skills | Hermes authors them; the Hermes **curator** prunes them; Paperclip Skill Studio versions the ones you promote | ClawHub and other public registries are not installed in production (§4.1) |
 
-**Two-layer alternative (recommended for v0):** run **Paperclip + Hermes** only, and let the Hermes gateway handle Telegram, WhatsApp, Slack, Signal, or email. This gives you a smaller attack surface, one less runtime, and a migration path (`hermes claw migrate`). Add OpenClaw once a client needs a channel that only it supports, or wants its richer device features.
+### 1.4 Hosting blueprint
 
-### 1.4 Hosting blueprint (24/7, sandboxed)
-
-**Topology** (sizes are `[Assumption]`, because model inference runs through APIs and CPU load is light; headless browsers use the most RAM, roughly 0.5–1 GB each):
-
-| Host | Runs | Size to start | Exposure |
+| Host | Runs | Start size `[Assumption]` | Exposure |
 |---|---|---|---|
-| **A: Control plane** | Paperclip, PostgreSQL (or managed Postgres), Caddy | 4 vCPU / 8 GB | Admin UI reachable **only over a tailnet** (`--bind tailnet`, authenticated mode) `[Verified]`. Caddy exposes only the webhook paths, protected by HMAC |
-| **B: Edge** | One **OpenClaw container per client**, each with its own Unix user, volume, and channel credentials | 4 vCPU / 8 GB for about 10–20 low-volume clients | No public ports where the channel allows it (Telegram long polling). Webhook channels go through Caddy only. Gateway bound to loopback |
-| **C: Execution** | Hermes workers on the **Docker** backend, or **Modal / Daytona** serverless backends that hibernate when idle `[Verified]` | 4 vCPU / 16 GB, or pay per use | No inbound ports. Outbound traffic restricted by an egress allowlist |
+| **A: Control** | Paperclip and PostgreSQL | 4 vCPU / 8 GB | UI on the tailnet only (`--bind tailnet`). Public paths only for routine webhooks |
+| **B: Front desk** | One Hermes **front-desk profile per client** (gateway), plus OpenClaw gateways where needed (one per client, each under its own Unix user) | 4 vCPU / 8 GB for about 15–25 SMB clients | WhatsApp Cloud API needs a **public HTTPS webhook** per profile (reverse proxy or tunnel). OpenClaw gateways bind to loopback on port 18789 by default; change the port per instance |
+| **C: Back office** | Hermes back-office profiles on the **Docker** backend, or Modal, Daytona, or Vercel Sandbox | 4 vCPU / 16 GB, or serverless | No inbound traffic. Egress allowlist following Hermes's network-isolation guide |
 
-**Bootstrap commands** (verified against the projects' READMEs; pin versions in production):
+**Bootstrap commands** (verified in the repos; pin versions in production):
 
 ```bash
-# Host A: Paperclip
-npx paperclipai@latest onboard --yes          # quickstart (embedded Postgres for local)
-# production: point at your own Postgres; bind to the tailnet only (--bind tailnet)
+# Paperclip (host A)
+npx paperclipai@latest onboard --yes
+pnpm dev --bind tailnet        # source install alternative; health: GET /api/health
 
-# Host B: OpenClaw (inside each client container)
+# Hermes (hosts B/C): one profile per client role
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+hermes profile create acme-front && acme-front setup     # WhatsApp Cloud API wizard + model
+hermes profile create acme-ops   && acme-ops setup       # terminal backend: docker
+hermes curator run --dry-run                             # preview skill pruning
+
+# OpenClaw (only if needed), one gateway per client
 curl -fsSL https://openclaw.ai/install.sh | bash
 openclaw onboard --install-daemon
-openclaw gateway status
-openclaw pairing approve <channel> <code>      # approve a paired sender
-
-# Host C: Hermes
-curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
-hermes setup            # wizard; select Docker/Modal/Daytona terminal backend
-hermes model            # choose provider:model
-hermes claw migrate --dry-run   # only if consolidating from an OpenClaw install
+openclaw security audit --deep && openclaw security audit --fix
 ```
 
-**OpenClaw sandbox configuration.** Use these keys from the official sandboxing docs `[Verified]`. For customer-facing bots, use `"all"`, not the documented example value `"non-main"`:
+**Hermes config for the back-office profile** (keys from `security.md`):
+
+```yaml
+terminal:
+  backend: docker
+  docker_forward_env: []        # keep secrets out of the sandbox
+  container_cpu: 1
+  container_memory: 2048
+  container_persistent: false   # ephemeral workspace per task
+approvals:
+  mode: smart                   # docker backend skips dangerous-cmd checks (container is the boundary)
+  unattended_mode: deny         # API/webhook-invoked sessions never auto-approve
+  cron_mode: deny
+curator:
+  enabled: true                 # stale after 14 days, archive after 30 (defaults)
+```
+
+**OpenClaw sandbox for any customer-facing gateway:**
 
 ```json5
-{
-  agents: {
-    defaults: {
-      sandbox: {
-        mode: "all",            // every session sandboxed; "non-main" leaves the main session on the host
-        backend: "docker",
-        scope: "agent",
-        workspaceAccess: "none",
-        workspaceRoot: "~/.openclaw/sandboxes"
-      }
-    }
-  }
-}
+{ agents: { defaults: { sandbox: { mode: "all", backend: "docker", scope: "agent", workspaceAccess: "none" } } } }
 ```
 
-Two caveats from the docs `[Verified]`: the **gateway itself is never sandboxed**, and **elevated exec runs on the host and bypasses the sandbox**. Turn elevated exec off for customer agents.
+The gateway itself is not sandboxed, and elevated exec bypasses the sandbox `[Verified]`.
 
-**Baseline hardening** (standard Linux practice):
-
-- Default-deny firewall: `ufw default deny incoming`. Allow 443 on host A only.
-- Tailscale for all admin access. SSH by key only, from the tailnet only.
-- Unattended security upgrades. Pin the versions of all three agent projects and upgrade on a schedule, after reading the release notes and security advisories.
-- Secrets live in Paperclip secret injection or a vault, **never** in skills or memory files. Use one provider API key per client (see §3.1).
-- Backups: nightly `pg_dump` to encrypted object storage, plus encrypted snapshots of the Hermes and OpenClaw data directories. They contain customer PII.
-- Observability: Paperclip supports OpenTelemetry and Sentry `[Verified]`. Add an external uptime check per client gateway and route alerts to your phone.
+**When OpenClaw joins Paperclip**, the adapter docs recommend `scopes: ["operator.admin"]` `[Verified]`. For production, grant the narrowest operator scope that still lets the agent receive tasks and post replies. Don't run with admin scope. Keep `disableDeviceAuth: false`, which is the default.
 
 ---
 
 ## 2. Monetization blueprints
 
-Unit-economics inputs used throughout come from §3.2. All prices are `[Assumption]` unless marked otherwise.
-
-### 2.1 Vertical support and upsell network (rank #1)
-
-**Offer:** "An always-on WhatsApp and Telegram front desk for <vertical> that answers, books, follows up, and upsells, and hands anything tricky to the owner's phone."
+### 2.1 Vertical support and booking network (rank #1)
 
 | Layer | Responsibilities |
 |---|---|
-| **Paperclip** | One company per client. Goals: response time, booking rate, CSAT. Routines for nightly summaries, weekly reports, and reactivation campaigns (approval-gated). The escalation queue, where the client owner is an approver for refunds and exceptions. Budget policy per client |
-| **OpenClaw** | Client-specific gateway on the official WhatsApp Business number and/or a Telegram bot. Fast-path skills for FAQ, availability lookup, booking create/modify, and payment links. Per-customer conversation context |
-| **Hermes** | Back-office jobs: synthesizing the FAQ from the client's website and documents, analysing complaints, drafting reactivation offers, and turning resolved escalations into new FAQ skills (the learning loop). Keeps a short `USER.md`-style client profile (tone, policies, prices) |
-| **Third parties** | Booking system (Calendly, Cal.com, or a vertical PMS), Stripe, and the WhatsApp Cloud API through Meta or a BSP such as Twilio |
+| **Paperclip** | One company per client. Goals: response time, booking rate, CSAT. Routines: nightly digest, weekly report, reactivation campaign (approval-gated). Approvals for refunds, discounts, and complaints. Budget policies at company and agent level |
+| **Hermes front desk** (`<client>-front`) | WhatsApp Cloud API and Telegram. Classifies, answers from the FAQ, drafts replies. Calls a **deterministic booking service** with a strict schema. No shell, web, or browser |
+| **Hermes back office** (`<client>-ops`) | Escalations, complaint analysis, offer drafting, turning resolved escalations into FAQ entries and skills (promoted only after approval) |
+| **OpenClaw** (optional) | iMessage for premium clients, run on a dedicated Mac with a dedicated bot macOS user `[Verified: deployment patterns doc]` |
+| **Third parties** | Cal.com or the vertical's practice-management system, Stripe, Meta WhatsApp Business account, Twilio if SMS is needed |
 
-**Delivery loop:** Day 0 onboarding takes about two hours of your time: ingest documents, generate the FAQ skill, connect the calendar, and set up a test number. From day 1 the bot runs, unresolved items reach the owner through Paperclip and Telegram, and there is a nightly digest. Each week you send a report covering conversations, resolutions, bookings, revenue influenced, and the top unanswered questions. Those unanswered questions become new skills once you approve them.
+**Pricing:** base plus outcome.
+- A base of $149–$399 per location per month `[Assumption]`.
+- Plus $2–$5 per booked appointment, *or* $0.50–$1.00 per AI-resolved conversation above an included allowance.
+- Anchor: Intercom Fin is about $0.99 per resolution, charged only when no escalation is needed, and billed on top of helpdesk seats `[Reported]`.
 
-**Pricing (recommended):** a base subscription plus an outcome fee.
+**Unit economics** for one location with 1,000 conversations a month, 15% escalated, and 60 bookings. Token figures come from §3.2.
 
-- A base of $149–$399 per month per location covers the number, channels, and up to N conversations `[Assumption]`.
-- Add **$0.50–$1.00 per AI-resolved conversation** above N, *or* **$2–$5 per booked appointment**. Market anchor: Intercom prices its Fin AI agent at **$0.99 per resolution** `[Reported]`.
-- Avoid pure revenue share for SMBs. Attribution disputes cost more than the extra fee is worth.
+| Line | Pattern A: small model drafts, code acts | Pattern B: mid-tier model holds the tools |
+|---|---|---|
+| Revenue: $249 base + 60 × $3 | **$429** | **$429** |
+| Front-desk model cost (1,000 × example A) | Haiku 5.5: **$10** | Sonnet 5.5, cached: **$110** |
+| Escalations (150 × example B, $0.30) | $45 | $45 |
+| WhatsApp messaging: about 4,000 business messages. Service-window messages may have become billable on **1 October 2026**; sources conflict on any free allowance | $0–$25 `[Reported]` | $0–$25 |
+| Infrastructure share | $15 | $15 |
+| Your time (1 hour at $100) | $100 | $100 |
+| **Contribution** | **≈ $234–$259 (55–60%)** | **≈ $134–$159 (31–37%)** |
+| …at a 5% escalation rate | ≈ $264–$289 (62–67%) | ≈ $164–$189 (38–44%) |
 
-**Unit economics** for one location with 1,000 conversations a month, 85% resolved by AI, and 60 bookings:
-
-| Line | Monthly |
-|---|---|
-| Revenue: $249 base + 60 × $3 bookings | **$429** |
-| Model cost: 1,000 conversations on the fast path with Claude Haiku 5.5 (about $0.01 each), plus 150 escalations on Claude Sonnet 5.5 (about $0.90 each) | ≈ $10 + $135 = **$145** (cut this by escalating less; see §3.3) |
-| WhatsApp messaging (service replies inside the 24-hour window; templates billed per message) | $0–$30 `[Reported: Meta per-message pricing; check your market]` |
-| Infrastructure share | ≈ $15 |
-| Your time: 1 hour a month at $100 an hour | $100 |
-| **Contribution** | **≈ $140–$170 (32–39%)**. Pushing the escalation rate from 15% to 5% lifts this to roughly 55–60% |
-
-The lesson: **the escalation rate drives the margin, not the model price.** Every escalation that Hermes turns into a fast-path skill makes every later conversation cheaper. Track the escalation rate per client every week.
-
-**Human touchpoints:** the client owner approves refunds, discounts, and complaints. You approve every new skill before it is promoted, and every outbound campaign.
-
-**Policy and legal:** follow WhatsApp's business-bot rules and the 24-hour customer-service window, and get opt-in before marketing templates. Under TCPA (US) and GDPR/ePrivacy (EU), get consent for proactive messages. Disclose that the user is talking to an AI; several jurisdictions require it. **Do not run commercial WhatsApp through an unofficial WhatsApp Web session.** Use the official Cloud API, because number bans destroy the client relationship `[Assumption: confirm which WhatsApp transport your OpenClaw version uses]`.
-
-**Moat:** a growing per-client skill library, integrations, and vertical templates you can clone into a new Paperclip company in minutes.
-**Kill criteria:** escalation rate still above 25% after 60 days, or churn above 5% a month across the first 10 clients.
-
-### 2.2 Niche intelligence and "alpha" briefs (rank #2)
-
-**Offer:** "Every morning at 7:00, the 5 things that matter in <niche> and what to do about them." Example niches: commercial real-estate listings in one metro, municipal tenders, SaaS pricing changes, regulatory filings in one sector.
-
-| Layer | Responsibilities |
-|---|---|
-| **Paperclip** | A company per product. Routines handle ingestion (hourly), synthesis (daily), and the weekly deep dive. An editorial-review gate controls publishing, and the budget is per product |
-| **Hermes** | Scrapers and API pullers in the Docker backend; subagents for extraction and classification on a cheap model; synthesis on a frontier model; skill growth (new source parsers). Memory holds the house style and the subscriber segments |
-| **OpenClaw** | Distribution and access control: a paid Telegram channel or bot, a WhatsApp broadcast to opted-in subscribers, a Slack Connect channel for B2B, and Q&A against the archive ("ask the brief") for paying members only |
-| **Third parties** | Stripe for subscriptions, a newsletter platform for email, and licensed data feeds where needed |
-
-**Pricing:** B2C/prosumer at $15–$49 per month. B2B team seats at $199–$999 per month with "ask the brief" Q&A and custom alerts `[Assumption]`.
-
-**Unit economics:** the cost per brief is about **$0.50 a day** (§3.2, example D), so roughly $15 a month *per product*, **not per subscriber**. With 100 subscribers at $29, MRR is $2,900 and gross margin is about 95% before data licensing. **Data access is the real cost and the real moat.**
+**What follows:**
+1. **Your own time is the largest cost line.** Make onboarding a template (Paperclip company package plus Hermes profile distribution) before you have five clients.
+2. The **safe** architecture is also the **cheap** one. Keeping tools away from the model that reads untrusted text lets that model be small.
+3. The escalation rate is the second lever. Review the "top unanswered" list weekly and turn each recurring item into an FAQ entry.
 
 **Policy and legal:**
-- **Scraping:** respect each site's terms of service and robots.txt. Prefer official APIs and licensed feeds. US case law (*hiQ v. LinkedIn*) narrowed CFAA exposure for public data, but contract claims still apply. MLS and other real-estate data is usually licensed, not scrapable.
-- **Financial content:** stay impersonal, general, and published on a regular schedule (the *Lowe v. SEC* publisher's exclusion). Never give personalized buy or sell advice; that is investment-adviser territory. Add disclaimers and get legal review before launching any markets product.
+- Meta's WhatsApp terms allow business-specific AI (support, bookings, order tracking) and ban general-purpose assistants (since 15 January 2026; Meta decides what counts as the "primary" use) `[Reported]`. Keep the bot scoped to the client's business.
+- Templates are required outside the 24-hour window. Get opt-in before marketing messages.
+- **AI disclosure in the first message.** This is mandatory in the EU from 2 August 2026 (fines up to €15M or 3% of turnover `[Reported]`), and good practice everywhere.
+- TCPA (US) and GDPR/ePrivacy (EU) consent rules apply to proactive messages.
+- Sign a data processing agreement (DPA) with each client. Medical verticals add HIPAA or the national equivalent, so avoid storing clinical details in agent memory.
 
-**Kill criteria:** fewer than 30 paid subscribers after 90 days of daily publishing, or a free-to-paid conversion rate below 2%.
+**Kill criteria:** escalation rate above 25% at day 60, or monthly churn above 5% across the first 10 clients.
 
-### 2.3 Autonomous content studio (rank #3, best as an add-on)
-
-| Layer | Responsibilities |
-|---|---|
-| **Paperclip** | A company per brand. Goals tied to traffic and leads. Content calendar as recurring issues. **Every publish goes through an approval gate** (client or editor). Budget per brand |
-| **Hermes** | Trend research subagents, briefs, drafts, image and video prompts through MCP tools, and repurposing one pillar into ten posts. The learning loop turns winning formats into skills ("thread hook formula v3") |
-| **OpenClaw** | Posting and engagement on chat-native channels (Telegram channels, Discord, Slack communities), DM follow-ups with leads, and browser automation only where no API exists, used sparingly |
-| **Third parties** | CMS (WordPress, Webflow), social schedulers or native APIs, image and video generation APIs, analytics |
-
-**Pricing:** a monthly retainer per brand, $500–$2,500 by volume, or a $99–$299 add-on for clients of the support or brief products `[Assumption]`.
-
-**Economics:** one SEO article costs about $0.36 in model fees plus images (§3.2, example C). The model cost is close to zero. **Editorial QA time is the cost that matters.**
-
-**Policy risk (the reason this ranks #3):** Google's spam policies target *scaled content abuse*, meaning mass-produced pages that add little value `[Reported]`. YouTube, TikTok, and Meta require labels on realistic synthetic media. Build for quality per piece (original data, expert quotes, the client's own case studies), not for volume.
-
-**Kill criteria:** client-reported leads per month don't cover the retainer by month 3.
-
-### 2.4 "Zero-human" ads agency (rank #4, highest ceiling, highest risk)
+### 2.2 Niche intelligence briefs (rank #2)
 
 | Layer | Responsibilities |
 |---|---|
-| **Paperclip** | A company per advertiser. **Every connection action that changes spend, budgets, bids, or campaign status is set to "Ask first"** `[Verified: Allowed / Ask first / Off]`. Daily optimization routine, weekly report routine. Agent budget for model spend, kept separate from the client's media budget |
-| **Hermes** | Keyword research, search-term mining, negative-keyword lists, creative variants, landing-page audits, anomaly detection, and proposed bid and budget changes written as a diff for approval. Skills for each platform's playbook |
-| **OpenClaw** | Client communication: a weekly summary in Slack or WhatsApp, approval requests the client answers with one tap ("Approve +20% on Campaign X?"), and alerts |
-| **Third parties** | Google Ads API (requires a developer token and access-level approval), Meta Marketing API (app review), TikTok Marketing API, and the client's analytics and CRM for conversion data |
+| **Paperclip** | A company per product. Routines: hourly ingestion, daily synthesis, weekly deep dive. A task-review gate before publishing. Project budgets (`lifetime` windows suit one-off backfills) |
+| **Hermes** | Ingestion and extraction subagents on Haiku 5.5, through the **Batch API** where latency doesn't matter; synthesis on Opus 5.5; skills for each new source parser; delivery to email, Telegram, or Slack through its gateway |
+| **OpenClaw** | Optional extra channels for B2B subscribers (Teams, Google Chat) |
 
-**Pricing:** a monthly management fee or a percentage of ad spend. Agency norms run roughly 10–20% of spend with a minimum `[Assumption]`. A performance share (a percentage of incremental ROAS) only makes sense once you have reliable server-side conversion tracking. Otherwise you are underwriting their tracking problems.
+**Pricing:** prosumer $15–$49 a month; B2B $199–$999 a month with "ask the archive" Q&A `[Assumption]`.
+**Economics:** about $0.42–$0.49 a day per product (example E). With 100 subscribers at $29, MRR is $2,900 and model cost is about $15 a month, so the real costs are data licensing and your editorial time.
+**Legal:**
+- Respect each site's terms of service and robots.txt, and prefer licensed feeds. *hiQ v. LinkedIn* narrowed CFAA exposure for scraping public data, but contract claims still apply.
+- Real-estate MLS data is usually licensed.
+- Financial briefs should stay impersonal and published on a regular schedule (the *Lowe v. SEC* publisher's exclusion). No personalized advice.
 
-**Why autonomy has to stay gated:** a bad bid or budget change loses real money within hours. Ads APIs need approvals and audits. Most agents' "optimizations" are noise unless they work from statistically meaningful conversion data.
+**Kill criteria:** fewer than 30 paid subscribers at day 90, or free-to-paid conversion below 2%.
 
-**Recommended path:** human approves every change for the first 90 days. After that, auto-approve only changes inside a **change envelope**: bid changes within ±15%, daily budget changes within ±10%, negatives only. Everything outside the envelope still needs approval.
+### 2.3 Content studio (rank #3, best as an add-on)
 
-**Kill criteria:** no measurable CPA or ROAS improvement against the client's baseline after 60 days on two or more accounts.
+| Layer | Responsibilities |
+|---|---|
+| **Paperclip** | A company per brand; the content calendar as routines; **every publish behind a task review**; budget per brand |
+| **Hermes** | Trend research, briefs, drafts, image and video generation through MCP tools, repurposing. Winning formats become skills, and the curator retires formats that stop working |
+| **OpenClaw** | Posting and engagement on chat-native communities |
+
+**Economics:** about $0.36 per article in model cost, or about $0.26 with Batch (example D). **Editorial QA is the real cost.**
+**Policy:** Google's spam policy (revised 28 August 2026) targets pages made mainly to manipulate rankings, "regardless of production method". Spam updates in June and August 2026 come with no Search Console notice and no reconsideration process `[Reported]`. EU Art. 50 and platform rules (YouTube, TikTok, Meta) require labels on synthetic media.
+**Kill criteria:** client-attributed leads don't cover the retainer by month 3.
+
+### 2.4 Ads agency (rank #4)
+
+| Layer | Responsibilities |
+|---|---|
+| **Paperclip** | Every tool connection that changes spend, bids, budgets, or campaign status is set to **`ask_first`**. In app definitions, set `askFirstRiskLevels` to `["write", "destructive"]` `[Verified: tool-access types]`. Daily optimization and weekly report routines |
+| **Hermes** | Search-term mining, negative keywords, creative variants, anomaly detection. Proposes changes as a diff for approval |
+| **OpenClaw or the Hermes gateway** | One-tap approval requests and the weekly summary to the client in Slack or WhatsApp |
+
+**API access:** Google Ads tokens start at Test or **Explorer** access (2,880 production operations a day). **Basic** allows 15,000 a day after review, which takes about 2–5 business days. **Standard** is unlimited and is meant for large or multi-user tools `[Reported: Google developer docs]`. Meta and TikTok marketing APIs require app review.
+**Pricing:** a management fee or a percentage of spend (10–20% is typical) `[Assumption]`. Use performance fees only once server-side conversion tracking is reliable.
+**Path:** human approval of every change for 90 days. After that, auto-approve only inside an envelope (bids ±15%, budgets ±10%, negatives only).
+**Kill criteria:** no CPA or ROAS gain against baseline at day 60 on two or more accounts.
 
 ### 2.5 Comparison matrix
 
-Scores run from 1 (worst) to 5 (best) for a solo founder `[Assumption: author's judgment]`.
+Scores run from 1 (worst) to 5 (best) `[Assumption]`.
 
 | Model | Time to first $ | Capital at risk | Regulatory exposure | Automation ceiling | Defensibility | **Solo fit** |
 |---|---|---|---|---|---|---|
-| Support and booking network | 5 | 5 | 4 | 4 | 3 | **5** |
-| Intelligence briefs | 3 | 4 | 3 (5 if not financial) | 5 | 4 (data) | **4** |
-| Content studio | 4 | 5 | 3 | 4 | 2 | **3** |
-| Ads agency | 3 | 2 | 3 | 2 (gated) | 3 | **2** |
+| Support and booking | 5 | 5 | 3 (WhatsApp policy, AI Act, health data) | 4 | 3 | **5** |
+| Intelligence briefs | 3 | 4 | 3 (5 if not financial) | 5 | 4 | **4** |
+| Content studio | 4 | 5 | 2 (spam policy) | 4 | 2 | **3** |
+| Ads agency | 3 | 2 | 3 | 2 | 3 | **2** |
 
 ---
 
 ## 3. Financial mechanics, budgeting, and token ROI
 
-### 3.1 Making budgets follow revenue
+### 3.1 How Paperclip budgets actually behave (from the source code)
 
-Paperclip supports scoped budget policies with **warning thresholds and hard stops**, and agents pause when they hit a stop `[Verified]`. Use them as a **revenue-linked control system**, not as arbitrary limits:
+| Mechanism | Behavior `[Verified]` |
+|---|---|
+| Policy fields | `scopeType` (company / agent / project), `amount` (cents), `windowKind` (`calendar_month_utc` / `lifetime`), `warnPercent` (default 80, range 1–99), `hardStopEnabled` (default true), `notifyEnabled`, `reservationCents`, `unpricedUsagePolicy` (default `block`) |
+| Cost reporting | Adapters report a cost event (provider, model, input and output tokens, cost in cents) after each heartbeat (`POST /api/companies/{id}/cost-events`) |
+| **Pre-dispatch reservation** | Before provider work starts, the run reserves `reservationCents` under a company lock. If observed spend plus held reservations would exceed the limit, the run is refused ("Available budget is reserved by unfinished runs") |
+| **Fail-closed hard stop** | A hard-stopped scope stays blocked when spend ≥ amount, **or** when there are unaccounted runs, **or** when there is **unpriced usage** (unless `unpricedUsagePolicy: allow`) |
+| Resolving | `keep_paused` or `raise_budget_and_resume`. The new amount must exceed observed spend. Also resets automatically on the first of the month (UTC) |
+| Known limit | *"Estimates constrain admission; they cannot cap a provider's bill."* A single long run can overshoot |
 
-1. **Set the client company budget from revenue:** `Budget_client = MRR_client × target model-cost ratio`. Use 15–25% for support, 5% for briefs, and 10% for content `[Assumption]`.
-2. **Split the budget by agent:** for example, the escalation worker gets 60%, report and digest routines 15%, skill development 15%, and 10% is reserve.
-3. **Set the thresholds:** a **warning at 70%** sends an alert to your Telegram and switches to frugal mode (lower effort, cheaper model for non-critical routines). A **hard stop at 90%**, not 100%, absorbs the documented enforcement lag from recorded spend and in-flight work.
-4. **Add a second, provider-side line of defense.** Give each client its own provider key or workspace with its own spend limit, for example an Anthropic Console workspace or an OpenRouter key credit limit, set at 110% of the Paperclip budget. If Paperclip's accounting lags or a process bypasses it, the provider still stops the spend.
-5. **Degrade instead of going dark.** A Paperclip hard stop should pause **back-office** work only. The OpenClaw fast path keeps running on its cheap model under its own capped key, and escalations queue up for a human. A support bot that stops answering is a churn event.
-6. **Upsell from overages.** Clients who hit warnings two months in a row are on the wrong plan. Have the monthly report routine draft the upgrade proposal automatically.
+**Configuration for one client** (support example, $429 MRR):
+
+1. **Company budget** = MRR × target model-cost ratio. Use 20% here, which is about $85. Set `warnPercent: 70`.
+2. **Agent budgets:** back office $50, front desk $20, routines $10. The rest is headroom.
+3. **Set `reservationCents` per agent** to the 95th-percentile cost of one run (for example $0.60 for back-office runs) so reservations stop runaway concurrency.
+4. **Price local models before enabling them.** With the default `unpricedUsagePolicy: block`, an unpriced local-model call holds a hard-stopped scope paused. Either set a notional price or switch to `allow` deliberately.
+5. **Provider-side backstop.** Give each client its own Anthropic workspace with a monthly spend limit (calls error until the next period once it's hit `[Reported]`), or an OpenRouter key with a credit limit. Set it at about 110% of the Paperclip company budget.
+6. **Degrade, don't go dark.** The front-desk profile uses its own capped key, so a back-office hard stop never silences customer replies. Escalations queue up for a human instead.
 
 ### 3.2 Token ROI
 
-**Definitions:**
-
 ```
-LLM_cost(task) = Σ_calls [ in_uncached × p_in + in_cache_read × p_cache + out × p_out ]   (thinking tokens bill as output)
-Contribution(task) = Revenue(task) − LLM_cost − tool/API cost − infra allocation − human_minutes × hourly_rate
-Token ROI = Revenue(task) / LLM_cost(task)          Gross margin = Contribution / Revenue
+LLM_cost = Σ [ uncached_in × p_in + cache_read_in × p_cache + out × p_out ]   (thinking bills as output)
+Contribution = Revenue − LLM_cost − tool/API − infra − human_minutes × rate
+Token ROI = Revenue / LLM_cost
 ```
 
-**Prices used** (Anthropic first-party, per million tokens, as of 2026-10-06):
+| Model | Input $/M | Output $/M | Cache read $/M |
+|---|---|---|---|
+| Claude Haiku 5.5 (`claude-haiku-5-5`) | 0.10 | 0.50 | — (prompts ≤ 100K) |
+| Claude Sonnet 5.5 (`claude-sonnet-5-5`) | 2.00 | 10.00 | 0.20 |
+| Claude Opus 5.5 (`claude-opus-5-5`) | 4.00 | 20.00 | 0.20 |
+| Claude Fable 5.1 (`claude-fable-5-1`) | 10.00 | 50.00 | 0.25 |
 
-| Model | Input | Output | Cache read | Use in this stack |
-|---|---|---|---|---|
-| Claude Haiku 5.5 (`claude-haiku-5-5`) | $0.10 | $0.50 | n/a | Fast path, extraction, classification (prices apply to prompts ≤ 100K tokens) |
-| Claude Sonnet 5.5 (`claude-sonnet-5-5`) | $2.00 | $10.00 | $0.20 | Escalations, drafting, most Hermes work |
-| Claude Opus 5.5 (`claude-opus-5-5`) | $4.00 | $20.00 | $0.20 | Supervisor decisions, final QA, hard synthesis |
-| Claude Fable 5.1 (`claude-fable-5-1`) | $10.00 | $50.00 | $0.25 | Rarely justified for these businesses |
+The Batch API is 50% off.
 
-The Batch API runs at **50% off** for work that isn't latency-sensitive: nightly synthesis, bulk extraction, content drafts.
+Token counts below are `[Assumption]`; the arithmetic is exact.
 
-**Worked examples.** Token counts are `[Assumption]`; the arithmetic is exact.
-
-| # | Task | Token profile | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 |
+| # | Task | Tokens | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 |
 |---|---|---|---|---|---|
-| A | 8-turn support conversation | 70K input (6K reusable prefix + history), 6K output including thinking | **$0.010** | $0.20 uncached / **≈$0.11** with ~75% cache reads | $0.40 / ≈$0.20 |
-| B | Hermes escalation job (research + action) | 300K input, 30K output | $0.045 | **$0.90** | $1.80 |
-| C | SEO article pipeline | research 150K/8K (Haiku) + draft 30K/12K (Sonnet) + QA 20K/4K (Opus) | **≈$0.36 total** (≈$0.26 with Batch for research and draft) | | |
-| D | Daily niche brief | extract 1M/50K (Haiku) + synthesize 60K/6K (Opus) | **≈$0.49 per day** (≈$0.42 with Batch for extraction) | | |
+| A | 8-turn front-desk conversation | 70K in / 6K out | **$0.010** | $0.20, or ≈$0.11 with 75% cache reads | $0.40 / ≈$0.20 |
+| B | Support escalation (back office) | 100K / 10K | $0.015 | **$0.30** | $0.60 |
+| C | Heavy research job | 300K / 30K | $0.045 | $0.90 | $1.80 |
+| D | SEO article: research (Haiku) + draft (Sonnet) + QA (Opus) | 150K/8K + 30K/12K + 20K/4K | **≈$0.36** (≈$0.26 with Batch for research and draft) | | |
+| E | Daily brief: extract (Haiku) + synthesize (Opus) | 1M/50K + 60K/6K | **≈$0.49** (≈$0.42 with Batch for extraction) | | |
 
-**What follows from these numbers:**
-- At $0.99 per resolution, example A on Haiku returns about **99×** its model cost, and B on Sonnet about **1.1×**. **Support margins depend on keeping escalations rare**, so every repeat escalation should become a fast-path skill.
-- Briefs (D) cost the same whether they have 10 subscribers or 10,000.
-- The extra cost of the frontier model in C (≈$0.16) is small next to the price of the article. Spend tokens where quality is what the customer is paying for.
+At $0.99 per resolution, A on Haiku returns about **99×** its model cost and B on Sonnet about **3.3×**.
 
-### 3.3 Model routing and cost optimization
+**Hidden cost to fix first: Hermes gateway sessions never reset on their own.** A customer chat "can run for weeks as a single session … it grows expensive (compaction runs repeatedly over an ever-longer history)" `[Verified: memory.md, sessions.md]`. Time-based resets require the `hermes-session-reset-policy` plugin `[Verified]`. For support bots, install it and reset on idle (for example 24 hours) so example A stays near 70K tokens instead of growing without limit.
 
-**Routing ladder:**
+### 3.3 Model routing and the security constraint
 
-| Tier | Handles | Engine |
-|---|---|---|
-| 0 | Opening hours, booking lookups, status checks, templated confirmations | **Deterministic code or skills, no LLM** |
-| 1 | Intent detection, FAQ answers, extraction, classification | Claude Haiku 5.5, or a local open-weight model behind an OpenAI-compatible endpoint (Hermes supports custom endpoints `[Verified]`) |
-| 2 | Escalations, drafting, multi-step tool use | Claude Sonnet 5.5 |
-| 3 | Supervisor decisions: approving a refund recommendation, final editorial QA, ad change proposals | Claude Opus 5.5 at `high` effort |
+| Tier | Handles | Engine | Tools allowed |
+|---|---|---|---|
+| 0 | Opening hours, availability, booking create/modify after explicit confirmation | **Deterministic service** | n/a (code) |
+| 1 | Intent, FAQ answers, drafting replies to untrusted customers | Haiku 5.5 or a local model | **Read-only, strict-schema lookups only.** No shell, web, browser, or cross-chat messaging |
+| 2 | Escalations, multi-step work | Sonnet 5.5 (low to medium effort) | Tools inside the Docker sandbox with an egress allowlist |
+| 3 | Approving recommendations, final QA, ad change proposals | Opus 5.5 (high effort) | Proposes only. Execution goes through `ask_first` |
 
-**Escalation triggers** between tiers: low classifier confidence, money or a policy involved, negative sentiment, a third back-and-forth turn without resolution, or the customer asking for a human.
+This follows OpenClaw's own guidance: *"Do not use older/weaker/smaller tiers for tool-enabled agents or untrusted inboxes … If you must use a smaller model, limit potential damage: read-only tools, strong sandboxing"* `[Verified: docs/gateway/security/prompt-injection.md]`.
 
-**Before you build a cascade, measure the simpler option.** Run one strong model at **lower effort** on the same tasks. Newer models at low effort often match older ones at high effort, and **prompt caches are model-scoped**, so a three-model cascade gives up cache reuse. Judge on **cost per completed task**, not cost per call. A cheaper call that needs a retry or a human escalation is not cheaper.
+**Before building a cascade**, measure one strong model at lower effort on the same tasks. Prompt caches are model-scoped, and the metric that matters is cost per *completed* task.
 
-**Other levers, in order of payoff:**
-1. **Prompt caching:** keep the system prompt, tool list, and skill descriptions byte-stable and put volatile data last. Hermes already freezes the memory snapshot per session for this reason `[Reported]`.
-2. **Batch API** for everything that isn't real-time (50% off).
-3. **Progressive skill loading:** Hermes keeps only short skill descriptions in the prompt and loads the full body when needed `[Reported]`.
-4. **Output discipline:** structured outputs and short replies. Thinking tokens bill as output, so use low effort for routine routes.
+**Other cost levers, in order:**
+1. Byte-stable system prompts. Hermes already freezes the memory snapshot for cache stability `[Verified]`.
+2. The Batch API.
+3. Progressive skill loading.
+4. Low effort on routine routes.
+5. Hermes's `/reload-mcp` invalidates the prompt cache, so avoid reloading MCP tools mid-session `[Verified: security.md]`.
 
-**When self-hosted open-weight models pay off:**
-
-```
-Break-even monthly tokens ≈ GPU_cost_per_month / blended_API_price_per_token
-e.g. $1,000/mo rented GPU ÷ ~$0.20 per 1M blended (Haiku 5.5, 4:1 in:out) ≈ 5 billion tokens/month
-```
-
-At Haiku-class API prices, **self-hosting rarely pays on cost alone** for a solo operator. Self-host for **data residency or confidentiality**, or when the volume is genuinely in the billions of tokens. Do not self-host to save money at small scale. `[Assumption: GPU price; plug in your quote]`
+**Self-hosting break-even:** `GPU $/month ÷ blended API $/token`. For example, $1,000 a month divided by about $0.18 per million tokens (Haiku 5.5 at a 4:1 input-to-output ratio) is about **5.5 billion tokens a month**. Self-host for data residency, not to save money at small scale `[Assumption: GPU price]`.
 
 ---
 
@@ -358,119 +354,139 @@ At Haiku-class API prices, **self-hosting rarely pays on cost alone** for a solo
 
 ### 4.1 Threat model
 
-| # | Threat | Where | Evidence | Mitigation |
-|---|---|---|---|---|
-| 1 | **Gateway RCE or exposed control plane** | OpenClaw gateway | CVE-2026-25253 (gateway RCE, CVSS reported as 8.8–9.8). Tens of thousands of internet-exposed instances, many without authentication `[Reported]` | Never expose the gateway publicly. Bind to loopback or the tailnet. Patch quickly. Run `openclaw doctor`-style security checks where available. One gateway per tenant container |
-| 2 | **Malicious skills** (supply chain) | ClawHub and other public skill registries | The "ClawHavoc" campaign: hundreds of malicious skills, with estimates from roughly 340 to more than 1,400. About 37% of scanned skills had flaws `[Reported: Koi, Bitdefender, Snyk]` | **No public-registry installs in production.** Build skills in-house or vendor-review them, pin them by hash, and promote them only through Paperclip Skill Studio with tests |
-| 3 | **Sandbox escape or host execution** | OpenClaw tools, Hermes terminal | Tools run on the host for the main session unless sandboxing is configured. Elevated exec bypasses the sandbox `[Verified]`. A Docker escape has been reported `[Reported]` | `sandbox.mode: "all"`, elevated exec off, rootless Docker or gVisor, Hermes on the Docker, Modal, or Daytona backend (never `local` in production), read-only root filesystem, no host mounts |
-| 4 | **Prompt injection** from customer messages, scraped pages, or emails | All layers | Inherent to LLM agents | Avoid the "lethal trifecta": don't let one agent combine private data, untrusted input, and an outbound channel. The fast-path agent has no secrets and no arbitrary HTTP. Scraping subagents can't message customers. Every money or bulk-message action goes through a Paperclip approval |
-| 5 | **Credential exfiltration** | Skills, memory files, logs | Malicious skills targeted keychains, SSH keys, and wallets `[Reported]` | Secrets injected at runtime, scoped per client and rotated. Never write them to `SOUL.md`, `MEMORY.md`, or skills. Egress allowlists per container |
-| 6 | **Runaway spend** | Loops, retries, self-triggering routines | Paperclip enforcement lags recorded spend `[Verified]` | §3.1 two-layer caps, per-routine concurrency of 1, a maximum number of turns per issue, and a circuit breaker on repeated failures |
-| 7 | **Unreviewed self-modification** | Hermes skill creation and patching | By design `[Verified]` | Skills Hermes writes go to a staging namespace. Promotion requires a Skill Studio test run and your approval, and you can roll back |
+| # | Threat | Evidence | Mitigation |
+|---|---|---|---|
+| 1 | **OpenClaw gateway token theft leading to RCE** | **CVE-2026-25253** (GHSA-g8p2-7wf7-98mq), CVSS 8.8: the Control UI took a gateway URL from a query parameter and sent the stored token; missing WebSocket origin checks allowed cross-site hijacking. **Localhost-only instances were affected.** Fixed in **2026.1.29** `[Reported: OSV, The Hacker News]` | Stay on current releases, run `openclaw security audit --deep`, keep device auth on, and don't browse untrusted sites from the operator browser profile |
+| 2 | Exposed gateways | Shodan-based counts from tens of thousands to six figures `[Reported]` | Loopback or tailnet only. Gateway HTTP bearer auth is "effectively all-or-nothing operator access" `[Verified: network-exposure.md]` |
+| 3 | **Malicious skills** | ClawHub "ClawHavoc": roughly 340 to 1,400+ malicious skills; about 37% of scanned skills had flaws `[Reported]` | No public-registry installs. The Hermes curator never touches hub skills, so you have to review those yourself. Promote skills only through Skill Studio |
+| 4 | Sandbox bypass | OpenClaw: tools run on the host unless sandboxing is on, and elevated exec bypasses it. Hermes: the `local` backend has no isolation `[Verified]` | OpenClaw `mode: "all"`, elevated exec off. Hermes on the Docker, Modal, Daytona, or Vercel Sandbox backend |
+| 5 | **Prompt injection** | Applies to any untrusted content, not just public DMs `[Verified]` | The tier rules in §3.3, the front-desk/back-office split, `unattended_mode: deny`, and `ask_first` on money-moving actions |
+| 6 | Secret exfiltration | Variables in `docker_forward_env` "can be read and exfiltrated" `[Verified]` | Keep the forward list empty. Use Hermes's credential vault (passwords injected into the page, never seen by the model) or secret providers (1Password, Bitwarden) |
+| 7 | Runaway spend | Reservations can't cap a provider's bill `[Verified]` | `reservationCents`, per-agent budgets, provider workspace caps, routine `coalesce_if_active` |
+| 8 | Cross-client leakage | OpenClaw: one trust boundary per gateway. Hermes: never share a profile `[Verified]` | Per-client gateway, profile, credentials, and Unix user. Paperclip company scoping for data |
 
 ### 4.2 Human-in-the-loop gates
 
-Map each irreversible action to a Paperclip control:
-
-| Action | Control |
+| Action | Paperclip control `[Verified]` |
 |---|---|
-| Hiring a new agent or changing an agent's model or tier | **Board approval** `[Verified: approve hires]` |
-| Spend changes (ads budgets, bids), refunds, discounts above $X | Connection action set to **"Ask first"**, with the approver being you or the client owner |
-| Publishing content, or bulk or outbound messaging | **Task review** before the issue can complete |
-| New or modified production skill | Skill Studio test plus approval, with versioned rollback |
-| Configuration changes | Revisioned and can be rolled back `[Verified]`. Review the diff weekly |
+| New agent or role | `hire_agent` approval (`POST /api/companies/{id}/agent-hires` creates a draft plus the approval) |
+| Strategy change | `approve_ceo_strategy` |
+| Budget exceeded | `budget_override_required` incident, resolved with `keep_paused` or `raise_budget_and_resume` |
+| Refunds, discounts, ad spend, publishing, bulk sends | Tool connection set to `ask_first` (risk levels `write` / `destructive`) **or** `request_board_approval` |
+| Routine edits | Append-only revisions; `baseRevisionId` concurrency check; restore |
 
-**Earn autonomy gradually:** widen an auto-approve envelope only after N consecutive approvals with zero reversals, and log the change as a board decision.
+Approvals follow the lifecycle `pending → approved | rejected | revision_requested → resubmitted`, with comments and linked issues, all available through the API. You can therefore build a small Telegram approve/reject bot for clients on top of `POST /api/approvals/{id}/approve`.
 
-### 4.3 Memory hygiene
+### 4.3 Memory and state hygiene
 
-| Store | Does it grow? | Policy |
+| Store | Grows? | Policy |
 |---|---|---|
-| Hermes `MEMORY.md` / `USER.md` | **No.** Capped at 2,200 and 1,375 characters `[Reported]` | Weekly routine: consolidate entries, move procedures into skills, keep only durable facts |
-| Hermes session history and search index | Yes | Retention of 90 days for raw transcripts; keep summaries. Honor customer deletion requests (GDPR) |
-| Skill library | Yes ("skill sprawl") | Monthly dedupe-and-merge routine. Retire skills unused for 60 days. Measure skill hit rate |
-| OpenClaw per-customer context and workspace memory | Yes | Per-customer retention window. Summarize, then truncate. PII redaction before long-term storage |
-| Paperclip issues, threads, and artifacts | Yes (this is your audit trail) | Keep it. Archive to cold storage after 12 months. Index for reporting |
+| Hermes `MEMORY.md` / `USER.md` | No (2,200 / 1,375 characters; errors when full) | The agent consolidates in batched operations. Keep procedures in skills |
+| **Hermes gateway sessions** | **Yes, indefinitely** unless reset | `hermes-session-reset-policy` plugin with an idle reset. Pruning deletes only *ended* sessions |
+| Hermes skills | Yes | Curator: stale at 14 days, archived at 30, never deleted. Pin critical skills. Turn on `consolidate: true` only if you accept its cost (about 50–100 API calls per sweep) |
+| OpenClaw transcripts | Yes. Stored per agent in SQLite, readable by anyone with filesystem access `[Verified]` | Disk encryption, retention windows, a separate OS user per client |
+| Paperclip issues and activity | Yes (this is your audit trail) | Keep it. Archive after 12 months |
 
 ### 4.4 Throttling and resilience
 
-- **Provider rate limits (429):** honor `retry-after`, use exponential backoff with jitter, and cap concurrency per tenant. Paperclip's wakeup queue already merges duplicate wakeups `[Verified]`.
-- **Fallbacks:** if Tier 2 fails or refuses, retry once on a sibling model. Otherwise queue the work for a human. Never loop silently.
-- **Degraded mode:** if the LLM provider is down, the OpenClaw fast path switches to deterministic replies ("We've received your message; a team member will reply by 10:00") and opens a Paperclip issue.
-- **Idempotency:** Paperclip's atomic issue checkout and execution locks prevent two workers handling the same job `[Verified]`. Make outbound actions (bookings, payments) idempotent with keys.
+- **Provider 429s:** backoff with jitter, plus per-tenant concurrency limits. Paperclip routines merge overlapping runs by default `[Verified]`.
+- **Model fallback:** Hermes supports fallback providers `[Verified: fallback-providers.md]`.
+- **Idempotency:** Paperclip's atomic issue checkout and duplicate-dispatch fencing in reservations `[Verified]`. Booking and payment calls need idempotency keys.
+- **Degraded mode:** if the LLM is down, the front desk sends a deterministic holding reply and opens a Paperclip issue.
 
 ### 4.5 Multi-company isolation on one server
 
-| Boundary | Paperclip provides | You must add |
+| Boundary | Paperclip | You add |
 |---|---|---|
-| Data and permissions | Company-scoped tasks, agents, permissions, activity, and access checks in one deployment `[Verified]` | Separate Postgres schemas or databases if a client contract requires physical separation |
-| Runtime | (not its scope) | **One OpenClaw container and one Hermes home or volume per client**, with a separate Unix UID, no shared volumes, and CPU and memory limits |
-| Credentials | Secret injection per invocation `[Verified]` | A separate provider key, channel token, and OAuth app grant for each client |
-| Network | (not its scope) | Per-container egress allowlist. No container-to-container traffic. Gateways on loopback or the tailnet only |
-| Blast radius | Pause or terminate a company's agents `[Verified]` | A tested runbook: rotate that client's keys, wipe and redeploy its containers from pinned images |
+| Data and permissions | Company-scoped access checks `[Verified]` | Separate databases if a contract requires it |
+| Runtime | — | One Hermes profile per client role, one OpenClaw gateway per client, a separate Unix user for each |
+| Credentials | Secret injection per run | Per-client provider workspace, Meta app/WABA, and channel tokens |
+| Network | — | Hermes egress isolation; no east-west traffic between containers |
+| Incident | Pause or terminate the company's agents | Runbook: rotate keys, wipe the profile or gateway, redeploy from a pinned version |
 
 ---
 
-## 5. Execution plan for a solo founder
+## 5. Execution plan
 
-### Days 1–30: build and land the design partner
-1. Pick **one vertical and one city** (for example dental clinics or physiotherapy) and line up three design-partner prospects before writing code.
-2. Stand up hosts A and C. Use the **two-layer stack** (Paperclip + Hermes gateway on Telegram) so you can iterate quickly.
-3. Build the vertical template: FAQ ingestion skill, booking skill (Cal.com or the vertical's PMS), escalation routine, nightly digest, and weekly report.
-4. Set budget policy (warning 70%, stop 90%) plus a capped provider key per client.
-5. Launch one design partner for free or at cost, in return for a case study and weekly feedback.
+### Days 1–30: build and land a design partner
+1. Pick one vertical and one city. Line up three prospects before writing code.
+2. Build: Paperclip (host A) plus Hermes front-desk and back-office profiles. Use **Telegram first** for the fastest iteration, and start Meta Business verification for the WhatsApp Cloud API in parallel.
+3. Write the deterministic booking service (Cal.com or the vertical's system) with strict JSON schemas.
+4. Set budgets (`warnPercent: 70`, per-agent `reservationCents`) and a provider workspace cap. Install the session-reset plugin.
+5. Put the AI disclosure in the greeting.
 
-**Gate:** escalation rate below 30% and the owner says "I'd pay for this".
+**Gate:** escalation rate below 30%, and the owner says they would pay.
 
-### Days 31–60: production hardening and the first paying customers
-1. Move customer channels to **OpenClaw on the official WhatsApp Business API**, with `sandbox.mode: "all"`, per-client containers, and a loopback gateway.
-2. Promote reviewed skills through Skill Studio. Run the weekly memory and skill hygiene routines.
-3. Turn on Stripe billing (base plus per-booking or per-resolution) and the outcome-based weekly report.
-4. Sign 3–5 paying clients.
+### Days 31–60: production
+1. Switch to the WhatsApp Cloud API (templates approved, public HTTPS webhook).
+2. Back office on the Docker backend with an empty `docker_forward_env`, egress isolation, `unattended_mode: deny`, and `ask_first` on money actions.
+3. Stripe billing; the weekly outcome report routine.
+4. Red-team it yourself: prompt injection through customer messages, cross-chat messaging, pairing bypass, secret leakage.
+5. Sign 3–5 paying clients.
 
-**Gate:** contribution margin above 40% per client and zero security findings from your own red-team pass (prompt injection, pairing bypass, secret leakage).
+**Gate:** contribution above 50% per client and no open security findings.
 
-### Days 61–90: scale and the second product
-1. Template the client company (Paperclip company package plus OpenClaw/Hermes container images) so onboarding takes under two hours.
-2. Push the escalation rate under 10% using the learning loop. Target contribution margin above 60%.
-3. Launch the **niche brief** for the same vertical (for example a "local healthcare operator weekly"), cross-sold to your support clients and sold on its own.
+### Days 61–90: scale
+1. Package a Paperclip company template and Hermes profile distributions so onboarding takes under 2 hours.
+2. Get escalations below 10%.
+3. Launch the niche brief for the same vertical.
+4. Add OpenClaw only if a client pays for iMessage or Teams.
 
-**Gate:** MRR covers your infrastructure, model, and tool costs at least 5×, and churn is under 5% a month.
+**Gate:** MRR at least 5× total infrastructure, model, and tool costs, and monthly churn under 5%.
 
 ### Launch checklist
-- [ ] Gateway not publicly reachable. Admin UI on the tailnet only. Webhooks HMAC-signed
-- [ ] Sandbox `all`. Elevated exec off. Hermes on Docker, Modal, or Daytona. Containers rootless with no host mounts
-- [ ] No public-registry skills. All skills versioned and tested in Skill Studio
-- [ ] Per-client provider keys with spend limits. Paperclip budgets set to 70/90
-- [ ] Approval gates on refunds, discounts, bulk messages, publishing, and ad spend
-- [ ] Official channel APIs. Opt-in and consent records. AI disclosure in the first message
-- [ ] DPA and privacy policy. Retention and deletion routines
-- [ ] Encrypted nightly backups, with a restore tested once
-- [ ] Alerts: budget warnings, gateway down, error-rate spikes, escalation backlog
-- [ ] Incident runbook per client: rotate, wipe, redeploy
+- [ ] Paperclip on the tailnet. Routine webhooks use `hmac_sha256`
+- [ ] Hermes: Docker/serverless backend, `docker_forward_env: []`, `unattended_mode: deny`, session-reset plugin, curator on
+- [ ] OpenClaw (if used): current release, `sandbox.mode: "all"`, elevated exec off, `openclaw security audit --deep` clean, minimal operator scopes, one gateway per client
+- [ ] No public-registry skills
+- [ ] Per-client budgets with reservations, plus a provider workspace cap
+- [ ] `ask_first` on refunds, discounts, spend, publishing, and bulk sends
+- [ ] WhatsApp Cloud API (not Baileys) for client numbers; templates and opt-in recorded
+- [ ] AI disclosure (EU Art. 50); DPA; retention and deletion routines
+- [ ] Encrypted backups, with a restore tested; alerts on budget incidents, gateway down, and escalation backlog
 
 ---
 
 ## 6. Sources
 
-**Primary (project docs and repos):**
-1. Paperclip README: features, budgets, governance, adapters, heartbeat pipeline, multi-company, deployment. <https://github.com/paperclipai/paperclip>
-2. Hermes Agent README: memory files, skills and agentskills.io, subagents, gateway, terminal backends, cron, providers, `hermes claw migrate`, install. <https://github.com/NousResearch/hermes-agent>
-3. Hermes Agent docs: persistent memory (limits, frozen snapshot). <https://hermes-agent.nousresearch.com/docs/user-guide/features/memory> (doc mirror consulted: <https://www.mintlify.com/NousResearch/hermes-agent/user-guide/features/memory>)
-4. OpenClaw README: channels, gateway, DM pairing, install, host-vs-sandbox default. <https://github.com/openclaw/openclaw>
-5. OpenClaw sandboxing docs: `agents.defaults.sandbox` keys, gateway not sandboxed, elevated exec. <https://docs.openclaw.ai/gateway/sandboxing.md>
-6. Anthropic model pricing (first-party API, cached 2026-10-06): Claude Developer Platform documentation.
+**Primary: in-repo code and docs** (snapshots in the header):
+1. Paperclip budgets: `packages/db/src/schema/budget_policies.ts`, `packages/shared/src/validators/budget.ts`, `packages/shared/src/constants.ts`, `server/src/services/budgets.ts`, `server/src/services/budget-reservations.ts`, `docs/guides/board-operator/costs-and-budgets.md`, `docs/api/costs.md`. <https://github.com/paperclipai/paperclip>
+2. Paperclip approvals and routines: `docs/api/approvals.md`, `docs/api/routines.md`; tool access `packages/shared/src/types/tool-access.ts`.
+3. Paperclip adapters: `packages/adapters/openclaw-gateway/doc/ONBOARDING_AND_TEST_PLAN.md`, `packages/adapters/hermes/README.md`, `packages/adapters/hermes-gateway/README.md`, `docs/guides/openclaw-docker-setup.md`.
+4. Hermes: `website/docs/user-guide/features/memory.md`, `features/curator.md`, `profiles.md`, `sessions.md`, `security.md`, `egress/network-isolation.md`, `features/credential-vault.md`, `messaging/whatsapp-cloud.md`, `features/kanban.md`. <https://github.com/NousResearch/hermes-agent>
+5. OpenClaw: `docs/channels/whatsapp.md`, `docs/channels/imessage.md`, `docs/channels/sms.md`, `docs/gateway/security/index.md`, `security/prompt-injection.md`, `security/access-control.md`, `security/network-exposure.md`, `security/running-the-audit.md`, `docs/gateway/config-gateway.md`. <https://github.com/openclaw/openclaw>
+6. Anthropic API pricing (first-party, cached 2026-10-06).
 
-**Secondary (`[Reported]`; verify before relying on them):**
+**Secondary (`[Reported]`):**
 
-7. OpenClaw security guide: CVE-2026-25253, malicious skills. <https://www.bitdoze.com/openclaw-security-guide/>
-8. OpenClaw security vulnerabilities 2026. <https://blog.barrack.ai/openclaw-security-vulnerabilities-2026/>
-9. OpenClaw Security Report, January 2026. <https://insiderllm.com/guides/openclaw-security-report-january-2026/>
-10. Known vulnerabilities tracker. <https://clawdocs.org/security/known-vulnerabilities>
-11. Meta's WhatsApp ban on general-purpose AI chatbots (effective 15 January 2026). <https://respond.io/blog/whatsapp-general-purpose-chatbots-ban>, <https://www.business-standard.com/technology/tech-news/meta-bans-ai-chatbots-from-whatsapp-business-api-chatgpt-to-shut-down-jan-2026-125102200335_1.html>
-12. Hermes Agent technical overviews. <https://www.turingpost.com/p/hermes>, <https://mranand.substack.com/p/inside-hermes-agent-how-a-self-improving>
-13. Paperclip deployment write-up. <https://zeabur.com/blogs/deploy-paperclip-ai-agent-orchestration>
+7. CVE-2026-25253: <https://osv.dev/vulnerability/CVE-2026-25253>, <https://thehackernews.com/2026/02/openclaw-bug-enables-one-click-remote.html>, <https://vulnerability.circl.lu/vuln/CVE-2026-25253>
+8. ClawHub malicious skills and exposure: <https://www.bitdoze.com/openclaw-security-guide/>, <https://blog.barrack.ai/openclaw-security-vulnerabilities-2026/>, <https://clawdocs.org/security/known-vulnerabilities>
+9. WhatsApp AI-provider policy: <https://respond.io/blog/whatsapp-general-purpose-chatbots-ban>, <https://respond.io/blog/whatsapp-chatbot-policy-2026>, <https://mobileecosystemforum.com/2025/12/01/metas-whatsapp-ai-chatbot-ban/>
+10. WhatsApp pricing change on 1 October 2026 (sources conflict): <https://www.engagelab.com/blog/whatsapp-pricing-2026-service-message-cost>, <https://yournotify.com/blog/whatsapp-pricing-update-2026/>, <https://help.zoho.com/portal/en/community/topic/whatsapp-message-pricing-changes-effective-october-1-2026-21-9-2026>
+11. EU AI Act Art. 50: <https://labs.cloudsecurityalliance.org/research/csa-research-note-eu-ai-act-article-50-transparency-20260729/>, <https://www.joneswalker.com/en/insights/blogs/ai-law-blog/yes-august-2-still-matters-the-eu-approved-a-high-risk-ai-delay-but-most-trans.html>
+12. Google Ads API access levels: <https://developers.google.com/google-ads/api/docs/access-levels>
+13. Google spam policies and 2026 updates: <https://ppc.land/scaled-content-abuse/>, <https://seosherpa.com/googles-june-2026-spam-update-has-finished-rolling-out/>, <https://gsqi.com/marketing-blog/august-2026-google-spam-update-case-studies/>
+14. Intercom Fin pricing: <https://www.gleap.io/blog/intercom-fin-ai-pricing-2026>, <https://www.ringly.io/blog/intercom-pricing>
+15. Anthropic workspace spend limits: <https://claude.com/resources/articles/workspaces>, <https://www.xray.tech/post/how-to-set-spend-limits-in-claude-console>
+16. "Zero-human company" evidence: <https://videohighlight.com/v/Yp5KiHBSpZo>, <https://trends.vc/zero-human-companies-300000-mo-maximizer-mode-liability-gap/>, <https://fast.io/resources/paperclip-ai-review-2026.md>
 
-**Not independently verified in this pass**, so check them before citing to clients: the default OpenClaw gateway port, the exact transport OpenClaw uses for WhatsApp, Intercom Fin's current per-resolution price, current WhatsApp per-message rates in your market, and Google, Meta, and TikTok ads-API access tiers.
+**Still unverified** (official pages unreachable from the research sandbox): Meta's own rate card after 1 October 2026; Meta's official WhatsApp Business Solution terms text; the Official Journal citation for the AI Act Omnibus.
 
-*This report is not legal or investment advice. Get counsel before launching anything that touches financial content, regulated data, or automated consumer messaging.*
+*Not legal or investment advice.*
+
+---
+
+## Appendix A: what changed from pass 1
+
+| Topic | Pass 1 | Pass 2 (verified) | Impact |
+|---|---|---|---|
+| Budget defaults | "Configurable, not a fixed 80/100" | Defaults **are** 80% warning and 100% stop; both configurable; reservations; fails closed on unpriced usage | Budget section rewritten |
+| WhatsApp ownership | OpenClaw (with "verify transport") | OpenClaw = Baileys only; Hermes = official Cloud API | Channel ownership and recommended stack changed |
+| Fast-path model | Haiku with tools | Small models only for read-only work; code performs actions | Routing ladder plus Pattern A/B economics |
+| Paperclip↔OpenClaw | "HTTP/webhook adapter" | `openclaw_gateway` over WebSocket; join through board approval; legacy webhook adapter removed | Flow redrawn |
+| OpenClaw→Hermes | Implied direct handoff | Only through Paperclip issues | Flow redrawn |
+| Multi-tenancy | Container per client | Officially "one trust boundary per gateway"; Hermes profiles must not be shared | Isolation table |
+| Session cost | Not covered | Hermes gateway sessions never reset without a plugin | New cost lever |
+| CVE detail | "Exposed port 18789" | Cross-site WebSocket hijacking; localhost also vulnerable; fixed in 2026.1.29 | Threat model |
+| Support economics | 32–39% contribution | 55–60% with Pattern A, 31–37% with Pattern B (escalation recosted at $0.30) | Unit economics |
+| New regulation | — | EU AI Act Art. 50 (from 2 Aug 2026); WhatsApp pricing change (1 Oct 2026) | Policy sections |
